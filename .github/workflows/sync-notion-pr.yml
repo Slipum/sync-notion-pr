@@ -1,0 +1,25 @@
+name: Sync PR link to Notion
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  sync-notion:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update Notion page
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          BRANCH_NAME: ${{ github.head_ref }}
+          NOTION_VERSION: ${{ vars.NOTION_VERSION }}
+        run: node scripts/sync-notion-pr.mjs
