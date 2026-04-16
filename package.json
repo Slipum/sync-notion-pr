@@ -1,0 +1,14 @@
+{
+	"name": "sync-notion-pr",
+	"version": "1.0.0",
+	"main": "dist/index.js",
+	"scripts": {
+		"build": "ncc build src/index.js -o dist"
+	},
+	"dependencies": {
+		"@notionhq/client": "^2.2.15"
+	},
+	"devDependencies": {
+		"@vercel/ncc": "^0.38.0"
+	}
+}

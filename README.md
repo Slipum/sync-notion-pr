@@ -1,5 +1,16 @@
 # Notion PR sync action
 
+Sync GitHub pull requests with Notion tasks using branch names.
+
+## Usage
+
+```yaml
+uses: Slipum/sync-notion-pr@v1
+with:
+  notion_token: ${{ secrets.NOTION_TOKEN }}
+  notion_database_id: ${{ secrets.NOTION_DATABASE_ID }}
+```
+
 ## What it does
 
 - Runs on GitHub pull requests.
@@ -22,3 +33,7 @@
 ## Optional repository variable
 
 - `NOTION_VERSION` (default: `2026-03-11`)
+
+```
+
+```
