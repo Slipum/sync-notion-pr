@@ -2,6 +2,8 @@ name: Sync PR link to Notion
 
 on:
   pull_request:
+    branches:
+      - dev
     types: [opened]
 
 permissions:

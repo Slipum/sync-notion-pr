@@ -2,27 +2,32 @@ const API_VERSION = process.env.NOTION_VERSION || '2026-03-11';
 
 function requireEnv(name) {
 	const value = process.env[name];
-	console.log(value);
-
 	if (!value) {
 		throw new Error(`Missing required environment variable: ${name}`);
 	}
-
 	return value;
 }
 
-function extractNotionId(branchName) {
+function extractBranchId(branchName) {
 	const clean = branchName.trim();
 
 	if (!clean) {
 		throw new Error('Branch name is empty');
 	}
 
-	// Supports:
-	//   TASK-123/fix-login
-	//   TASK-123
-	// If there is no '/', the whole branch name becomes the ID.
 	return clean.includes('/') ? clean.split('/')[0].trim() : clean;
+}
+
+function extractTaskNumber(branchIdPart) {
+	const match = branchIdPart.match(/\d+/);
+
+	if (!match) {
+		throw new Error(
+			`Cannot extract numeric Notion ID from branch value: "${branchIdPart}". Expected something like TASK-1 or 1.`,
+		);
+	}
+
+	return Number.parseInt(match[0], 10);
 }
 
 async function notionRequest(path, options = {}) {
@@ -46,43 +51,73 @@ async function notionRequest(path, options = {}) {
 	return response.json();
 }
 
-async function main() {
-	const databaseId = requireEnv('NOTION_DATABASE_ID');
-	const prUrl = requireEnv('PR_URL');
-	const branchName = requireEnv('BRANCH_NAME');
-
-	const notionId = extractNotionId(branchName);
-
-	const query = await notionRequest(`/v1/data_sources/${databaseId}/query`, {
+async function findPageByTaskNumber(dataSourceId, taskNumber) {
+	const query = await notionRequest(`/v1/data_sources/${dataSourceId}/query`, {
 		method: 'POST',
 		body: JSON.stringify({
 			filter: {
 				property: 'ID',
-				rich_text: {
-					equals: notionId,
+				unique_id: {
+					equals: taskNumber,
 				},
 			},
 			page_size: 1,
 		}),
 	});
 
-	const page = query.results?.[0];
-	if (!page) {
-		throw new Error(`No Notion page found for ID: ${notionId}`);
-	}
+	return query.results?.[0] ?? null;
+}
 
-	await notionRequest(`/v1/pages/${page.id}`, {
+async function appendPrLink(pageId, prUrl) {
+	await notionRequest(`/v1/blocks/${pageId}/children`, {
 		method: 'PATCH',
 		body: JSON.stringify({
-			properties: {
-				'PR Link': {
-					url: prUrl,
+			children: [
+				{
+					object: 'block',
+					type: 'paragraph',
+					paragraph: {
+						rich_text: [
+							{
+								type: 'text',
+								text: {
+									content: 'PR Link: ',
+								},
+							},
+							{
+								type: 'text',
+								text: {
+									content: prUrl,
+									link: {
+										url: prUrl,
+									},
+								},
+							},
+						],
+					},
 				},
-			},
+			],
 		}),
 	});
+}
 
-	console.log(`Updated Notion page ${page.id} for ${notionId} -> ${prUrl}`);
+async function main() {
+	const dataSourceId = requireEnv('NOTION_DATABASE_ID');
+	const prUrl = requireEnv('PR_URL');
+	const branchName = requireEnv('BRANCH_NAME');
+
+	const branchIdPart = extractBranchId(branchName);
+	const taskNumber = extractTaskNumber(branchIdPart);
+
+	const page = await findPageByTaskNumber(dataSourceId, taskNumber);
+
+	if (!page) {
+		throw new Error(`No Notion page found for task number: ${taskNumber} (from "${branchIdPart}")`);
+	}
+
+	await appendPrLink(page.id, prUrl);
+
+	console.log(`Appended PR link to Notion page ${page.id} for task ${taskNumber} -> ${prUrl}`);
 }
 
 main().catch((error) => {
