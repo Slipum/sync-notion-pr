@@ -18,7 +18,7 @@ inputs:
 
 runs:
   using: 'node20'
-  main: 'src/index.js'
+  main: 'dist/index.js'
 
 branding:
   icon: 'link'
