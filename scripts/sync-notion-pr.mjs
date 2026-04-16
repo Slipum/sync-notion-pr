@@ -2,9 +2,12 @@ const API_VERSION = process.env.NOTION_VERSION || '2026-03-11';
 
 function requireEnv(name) {
 	const value = process.env[name];
+	console.log(value);
+
 	if (!value) {
 		throw new Error(`Missing required environment variable: ${name}`);
 	}
+
 	return value;
 }
 
