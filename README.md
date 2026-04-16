@@ -5,7 +5,7 @@ Sync GitHub pull requests with Notion tasks using branch names.
 ## Usage
 
 ```yaml
-uses: Slipum/sync-notion-pr@v1.0.2
+uses: Slipum/sync-notion-pr@v1.0.3
 with:
   notion_token: ${{ secrets.NOTION_TOKEN }}
   notion_database_id: ${{ secrets.NOTION_DATABASE_ID }}
