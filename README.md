@@ -2,6 +2,8 @@
 
 Sync GitHub pull requests with Notion tasks using branch names.
 
+## TEST
+
 ## Usage
 
 ```yaml
