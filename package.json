@@ -1,7 +1,7 @@
 {
 	"name": "sync-notion-pr",
-	"version": "1.0.1",
-	"main": "dist/index.js",
+	"version": "1.0.2",
+	"main": "src/index.js",
 	"scripts": {
 		"build": "ncc build src/index.js -o dist"
 	},

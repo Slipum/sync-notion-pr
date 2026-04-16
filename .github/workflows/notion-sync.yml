@@ -24,4 +24,4 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           BRANCH_NAME: ${{ github.head_ref }}
           NOTION_VERSION: ${{ vars.NOTION_VERSION }}
-        run: node src/index.mjs
+        run: node src/index.js
