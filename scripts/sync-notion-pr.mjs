@@ -2,7 +2,6 @@ const API_VERSION = process.env.NOTION_VERSION || '2026-03-11';
 
 function requireEnv(name) {
 	const value = process.env[name];
-	console.log(value);
 
 	if (!value) {
 		throw new Error(`Missing required environment variable: ${name}`);
@@ -72,6 +71,19 @@ async function findPageByTaskNumber(dataSourceId, taskNumber) {
 }
 
 async function appendPrLink(pageId, prUrl) {
+	// const existing = await notionRequest(`/v1/blocks/${pageId}/children`);
+
+	// const alreadyExists = existing.results?.some(
+	// 	(block) =>
+	// 		block.type === 'paragraph' &&
+	// 		block.paragraph?.rich_text?.some((t) => t.text?.content?.includes(prUrl)),
+	// );
+
+	// if (alreadyExists) {
+	// 	console.log('PR link already exists, skipping...');
+	// 	return;
+	// }
+
 	await notionRequest(`/v1/blocks/${pageId}/children`, {
 		method: 'PATCH',
 		body: JSON.stringify({
@@ -84,16 +96,14 @@ async function appendPrLink(pageId, prUrl) {
 							{
 								type: 'text',
 								text: {
-									content: 'PR Link: ',
+									content: '🔗 PR Link: ',
 								},
 							},
 							{
 								type: 'text',
 								text: {
 									content: prUrl,
-									link: {
-										url: prUrl,
-									},
+									link: { url: prUrl },
 								},
 							},
 						],

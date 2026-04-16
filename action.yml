@@ -1,0 +1,25 @@
+name: 'Notion PR Sync'
+description: 'Sync GitHub Pull Requests to Notion tasks using branch-based IDs'
+author: 'your-name'
+
+inputs:
+  notion_token:
+    description: 'Notion Internal Integration Token'
+    required: true
+
+  notion_database_id:
+    description: 'Notion Database ID'
+    required: true
+
+  notion_version:
+    description: 'Notion API version'
+    required: false
+    default: '2026-03-11'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'link'
+  color: 'purple'
