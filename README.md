@@ -1,7 +1,5 @@
 # Notion PR sync action
 
-## TEST
-
 ## What it does
 
 - Runs on GitHub pull requests.
