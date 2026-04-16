@@ -1,14 +1,7 @@
-const API_VERSION = process.env.NOTION_VERSION || '2026-03-11';
+const core = require('@actions/core');
+const github = require('@actions/github');
 
-function requireEnv(name) {
-	const value = process.env[name];
-
-	if (!value) {
-		throw new Error(`Missing required environment variable: ${name}`);
-	}
-
-	return value;
-}
+const API_VERSION = core.getInput('notion_version') || '2026-03-11';
 
 function extractBranchId(branchName) {
 	const clean = branchName.trim();
@@ -33,7 +26,7 @@ function extractTaskNumber(branchIdPart) {
 }
 
 async function notionRequest(path, options = {}) {
-	const token = requireEnv('NOTION_TOKEN');
+	const token = core.getInput('notion_token');
 
 	const response = await fetch(`https://api.notion.com${path}`, {
 		...options,
@@ -71,19 +64,6 @@ async function findPageByTaskNumber(dataSourceId, taskNumber) {
 }
 
 async function appendPrLink(pageId, prUrl) {
-	// const existing = await notionRequest(`/v1/blocks/${pageId}/children`);
-
-	// const alreadyExists = existing.results?.some(
-	// 	(block) =>
-	// 		block.type === 'paragraph' &&
-	// 		block.paragraph?.rich_text?.some((t) => t.text?.content?.includes(prUrl)),
-	// );
-
-	// if (alreadyExists) {
-	// 	console.log('PR link already exists, skipping...');
-	// 	return;
-	// }
-
 	await notionRequest(`/v1/blocks/${pageId}/children`, {
 		method: 'PATCH',
 		body: JSON.stringify({
@@ -115,9 +95,22 @@ async function appendPrLink(pageId, prUrl) {
 }
 
 async function main() {
-	const dataSourceId = requireEnv('NOTION_DATABASE_ID');
-	const prUrl = requireEnv('PR_URL');
-	const branchName = requireEnv('BRANCH_NAME');
+	const dataSourceId = core.getInput('notion_database_id');
+
+	const prUrl =
+		github.context.payload.pull_request?.html_url || github.context.payload.pull_request?.url;
+
+	const branchName =
+		github.context.payload.pull_request?.head?.ref ||
+		github.context.ref?.replace('refs/heads/', '');
+
+	if (!prUrl) {
+		throw new Error('Cannot determine PR URL (not a pull_request event)');
+	}
+
+	if (!branchName) {
+		throw new Error('Cannot determine branch name');
+	}
 
 	const branchIdPart = extractBranchId(branchName);
 	const taskNumber = extractTaskNumber(branchIdPart);
@@ -125,12 +118,12 @@ async function main() {
 	const page = await findPageByTaskNumber(dataSourceId, taskNumber);
 
 	if (!page) {
-		throw new Error(`No Notion page found for task number: ${taskNumber} (from "${branchIdPart}")`);
+		throw new Error(`No Notion page found for task number: ${taskNumber}`);
 	}
 
 	await appendPrLink(page.id, prUrl);
 
-	console.log(`Appended PR link to Notion page ${page.id} for task ${taskNumber} -> ${prUrl}`);
+	console.log(`✅ Updated Notion page ${page.id} → TASK-${taskNumber} → ${prUrl}`);
 }
 
 main().catch((error) => {
