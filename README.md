@@ -5,7 +5,7 @@ Sync GitHub pull requests with Notion tasks using branch names.
 ## Usage
 
 ```yaml
-uses: Slipum/sync-notion-pr@v1.1.0
+uses: Slipum/sync-notion-pr@v1.1.1
 with:
   notion_token: ${{ secrets.NOTION_TOKEN }}
 ```
@@ -25,6 +25,7 @@ with:
 ## Branch naming examples
 
 - TASK-123/fix-login
+
 * TASK-123
 
 ## Required repository secrets

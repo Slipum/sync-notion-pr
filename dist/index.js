@@ -31887,25 +31887,32 @@ async function getAllAccessibleDataSources() {
 	let startCursor;
 
 	do {
-		const query = new URLSearchParams();
-		query.set('page_size', '100');
+		const body = {
+			filter: {
+				property: 'object',
+				value: 'data_source',
+			},
+			page_size: 100,
+		};
+
 		if (startCursor) {
-			query.set('start_cursor', startCursor);
+			body.start_cursor = startCursor;
 		}
 
-		const res = await notionRequest(`/v1/search?${query.toString()}`, {
+		const res = await notionRequest(`/v1/search`, {
 			method: 'POST',
-			body: JSON.stringify({
-				filter: {
-					property: 'object',
-					value: 'data_source',
-				},
-			}),
+			body: JSON.stringify(body),
 		});
 
-		all.push(...(res.results || []));
+		if (!Array.isArray(res.results)) {
+			throw new Error('No data_source results (check Notion permissions)');
+		}
+
+		all.push(...res.results);
 		startCursor = res.has_more ? res.next_cursor : undefined;
 	} while (startCursor);
+
+	console.log(`📦 Found ${all.length} data sources`);
 
 	return all;
 }
@@ -31930,14 +31937,18 @@ async function findPageInDataSource(dataSourceId, taskNumber) {
 async function findPageByTaskNumber(taskNumber) {
 	const dataSources = await getAllAccessibleDataSources();
 
+	console.log(`🔍 Searching TASK-${taskNumber}...`);
+
 	const matches = [];
 
-	for (const dataSource of dataSources) {
-		const page = await findPageInDataSource(dataSource.id, taskNumber);
+	for (const ds of dataSources) {
+		const page = await findPageInDataSource(ds.id, taskNumber);
 
 		if (page) {
+			console.log(`✅ Found in: ${ds.title?.[0]?.plain_text || 'Unnamed'} (${ds.id})`);
+
 			matches.push({
-				dataSource,
+				dataSource: ds,
 				page,
 			});
 		}
@@ -31953,7 +31964,7 @@ async function findPageByTaskNumber(taskNumber) {
 			.join(', ');
 
 		throw new Error(
-			`Found multiple matching pages for TASK-${taskNumber}. Please keep only one source of truth. Matches: ${names}`,
+			`Multiple TASK-${taskNumber} found. Keep one source of truth. Matches: ${names}`,
 		);
 	}
 
@@ -31962,7 +31973,7 @@ async function findPageByTaskNumber(taskNumber) {
 
 async function getAllChildBlocks(pageId) {
 	const allBlocks = [];
-	let startCursor = undefined;
+	let startCursor;
 
 	do {
 		const query = new URLSearchParams();
@@ -31996,16 +32007,12 @@ function blockContainsPrUrl(block, prUrl) {
 async function assertPrDoesNotExist(pageId, prUrl) {
 	const blocks = await getAllChildBlocks(pageId);
 
-	const alreadyExists = blocks.some((block) => {
-		if (block.type !== 'paragraph') {
-			return false;
-		}
+	const exists = blocks.some(
+		(block) => block.type === 'paragraph' && blockContainsPrUrl(block, prUrl),
+	);
 
-		return blockContainsPrUrl(block, prUrl);
-	});
-
-	if (alreadyExists) {
-		throw new Error(`PR link already exists in Notion page: ${prUrl}`);
+	if (exists) {
+		throw new Error(`PR already exists in Notion: ${prUrl}`);
 	}
 }
 
@@ -32021,9 +32028,7 @@ async function appendPrLink(pageId, prUrl) {
 						rich_text: [
 							{
 								type: 'text',
-								text: {
-									content: '🔗 PR Link: ',
-								},
+								text: { content: '🔗 PR Link: ' },
 							},
 							{
 								type: 'text',
@@ -32062,13 +32067,13 @@ async function main() {
 	const page = await findPageByTaskNumber(taskNumber);
 
 	if (!page) {
-		throw new Error(`No Notion page found for task number: TASK-${taskNumber}`);
+		throw new Error(`No Notion page found for TASK-${taskNumber}`);
 	}
 
 	await assertPrDoesNotExist(page.id, prUrl);
 	await appendPrLink(page.id, prUrl);
 
-	console.log(`✅ Updated Notion page: TASK-${taskNumber} → ${prUrl}`);
+	console.log(`✅ Updated Notion: TASK-${taskNumber} → ${prUrl}`);
 }
 
 main().catch((error) => {
