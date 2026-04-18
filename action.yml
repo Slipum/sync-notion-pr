@@ -7,10 +7,6 @@ inputs:
     description: 'Notion Internal Integration Token'
     required: true
 
-  notion_database_id:
-    description: 'Notion Database ID'
-    required: true
-
   notion_version:
     description: 'Notion API version'
     required: false

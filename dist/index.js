@@ -31882,7 +31882,35 @@ async function notionRequest(path, options = {}) {
 	return response.json();
 }
 
-async function findPageByTaskNumber(dataSourceId, taskNumber) {
+async function getAllAccessibleDataSources() {
+	const all = [];
+	let startCursor;
+
+	do {
+		const query = new URLSearchParams();
+		query.set('page_size', '100');
+		if (startCursor) {
+			query.set('start_cursor', startCursor);
+		}
+
+		const res = await notionRequest(`/v1/search?${query.toString()}`, {
+			method: 'POST',
+			body: JSON.stringify({
+				filter: {
+					property: 'object',
+					value: 'data_source',
+				},
+			}),
+		});
+
+		all.push(...(res.results || []));
+		startCursor = res.has_more ? res.next_cursor : undefined;
+	} while (startCursor);
+
+	return all;
+}
+
+async function findPageInDataSource(dataSourceId, taskNumber) {
 	const query = await notionRequest(`/v1/data_sources/${dataSourceId}/query`, {
 		method: 'POST',
 		body: JSON.stringify({
@@ -31897,6 +31925,88 @@ async function findPageByTaskNumber(dataSourceId, taskNumber) {
 	});
 
 	return query.results?.[0] ?? null;
+}
+
+async function findPageByTaskNumber(taskNumber) {
+	const dataSources = await getAllAccessibleDataSources();
+
+	const matches = [];
+
+	for (const dataSource of dataSources) {
+		const page = await findPageInDataSource(dataSource.id, taskNumber);
+
+		if (page) {
+			matches.push({
+				dataSource,
+				page,
+			});
+		}
+	}
+
+	if (matches.length === 0) {
+		return null;
+	}
+
+	if (matches.length > 1) {
+		const names = matches
+			.map((m) => `${m.dataSource.title?.[0]?.plain_text || 'Unnamed'} (${m.dataSource.id})`)
+			.join(', ');
+
+		throw new Error(
+			`Found multiple matching pages for TASK-${taskNumber}. Please keep only one source of truth. Matches: ${names}`,
+		);
+	}
+
+	return matches[0].page;
+}
+
+async function getAllChildBlocks(pageId) {
+	const allBlocks = [];
+	let startCursor = undefined;
+
+	do {
+		const query = new URLSearchParams();
+		query.set('page_size', '100');
+		if (startCursor) {
+			query.set('start_cursor', startCursor);
+		}
+
+		const res = await notionRequest(`/v1/blocks/${pageId}/children?${query.toString()}`, {
+			method: 'GET',
+		});
+
+		allBlocks.push(...(res.results || []));
+		startCursor = res.has_more ? res.next_cursor : undefined;
+	} while (startCursor);
+
+	return allBlocks;
+}
+
+function blockContainsPrUrl(block, prUrl) {
+	const richText = block?.paragraph?.rich_text || [];
+
+	return richText.some((item) => {
+		const linkedUrl = item?.text?.link?.url;
+		const plainText = item?.plain_text;
+
+		return linkedUrl === prUrl || plainText === prUrl;
+	});
+}
+
+async function assertPrDoesNotExist(pageId, prUrl) {
+	const blocks = await getAllChildBlocks(pageId);
+
+	const alreadyExists = blocks.some((block) => {
+		if (block.type !== 'paragraph') {
+			return false;
+		}
+
+		return blockContainsPrUrl(block, prUrl);
+	});
+
+	if (alreadyExists) {
+		throw new Error(`PR link already exists in Notion page: ${prUrl}`);
+	}
 }
 
 async function appendPrLink(pageId, prUrl) {
@@ -31931,8 +32041,6 @@ async function appendPrLink(pageId, prUrl) {
 }
 
 async function main() {
-	const dataSourceId = core.getInput('notion_database_id');
-
 	const prUrl =
 		github.context.payload.pull_request?.html_url || github.context.payload.pull_request?.url;
 
@@ -31951,15 +32059,16 @@ async function main() {
 	const branchIdPart = extractBranchId(branchName);
 	const taskNumber = extractTaskNumber(branchIdPart);
 
-	const page = await findPageByTaskNumber(dataSourceId, taskNumber);
+	const page = await findPageByTaskNumber(taskNumber);
 
 	if (!page) {
-		throw new Error(`No Notion page found for task number: ${taskNumber}`);
+		throw new Error(`No Notion page found for task number: TASK-${taskNumber}`);
 	}
 
+	await assertPrDoesNotExist(page.id, prUrl);
 	await appendPrLink(page.id, prUrl);
 
-	console.log(`✅ Updated Notion page ${page.id} → TASK-${taskNumber} → ${prUrl}`);
+	console.log(`✅ Updated Notion page: TASK-${taskNumber} → ${prUrl}`);
 }
 
 main().catch((error) => {
