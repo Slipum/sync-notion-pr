@@ -1,5 +1,5 @@
 name: 'Notion PR Sync'
-description: 'Sync GitHub Pull Requests to Notion tasks using branch-based IDs'
+description: 'Sync GitHub Pull Requests with Notion tasks (bi-directional links, no duplicates)'
 author: 'Slipum'
 
 inputs:

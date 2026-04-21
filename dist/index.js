@@ -31842,9 +31842,7 @@ const API_VERSION = core.getInput('notion_version') || '2026-03-11';
 function extractBranchId(branchName) {
 	const clean = branchName.trim();
 
-	if (!clean) {
-		throw new Error('Branch name is empty');
-	}
+	if (!clean) throw new Error('Branch name is empty');
 
 	return clean.includes('/') ? clean.split('/')[0].trim() : clean;
 }
@@ -31853,9 +31851,7 @@ function extractTaskNumber(branchIdPart) {
 	const match = branchIdPart.match(/\d+/);
 
 	if (!match) {
-		throw new Error(
-			`Cannot extract numeric Notion ID from branch value: "${branchIdPart}". Expected something like TASK-1 or 1.`,
-		);
+		throw new Error(`Cannot extract numeric Notion ID from branch: "${branchIdPart}"`);
 	}
 
 	return Number.parseInt(match[0], 10);
@@ -31864,7 +31860,7 @@ function extractTaskNumber(branchIdPart) {
 async function notionRequest(path, options = {}) {
 	const token = core.getInput('notion_token');
 
-	const response = await fetch(`https://api.notion.com${path}`, {
+	const res = await fetch(`https://api.notion.com${path}`, {
 		...options,
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -31874,149 +31870,111 @@ async function notionRequest(path, options = {}) {
 		},
 	});
 
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(`Notion API error ${response.status} ${response.statusText}: ${body}`);
+	if (!res.ok) {
+		const body = await res.text();
+		throw new Error(`Notion API ${res.status}: ${body}`);
 	}
 
-	return response.json();
+	return res.json();
 }
 
-async function getAllAccessibleDataSources() {
+async function getAllDataSources() {
 	const all = [];
-	let startCursor;
+	let cursor;
 
 	do {
 		const body = {
-			filter: {
-				property: 'object',
-				value: 'data_source',
-			},
+			filter: { property: 'object', value: 'data_source' },
 			page_size: 100,
+			...(cursor ? { start_cursor: cursor } : {}),
 		};
 
-		if (startCursor) {
-			body.start_cursor = startCursor;
-		}
-
-		const res = await notionRequest(`/v1/search`, {
+		const res = await notionRequest('/v1/search', {
 			method: 'POST',
 			body: JSON.stringify(body),
 		});
 
 		if (!Array.isArray(res.results)) {
-			throw new Error('No data_source results (check Notion permissions)');
+			throw new Error('No data_source results (check permissions)');
 		}
 
 		all.push(...res.results);
-		startCursor = res.has_more ? res.next_cursor : undefined;
-	} while (startCursor);
-
-	console.log(`📦 Found ${all.length} data sources`);
+		cursor = res.has_more ? res.next_cursor : undefined;
+	} while (cursor);
 
 	return all;
 }
 
 async function findPageInDataSource(dataSourceId, taskNumber) {
-	const query = await notionRequest(`/v1/data_sources/${dataSourceId}/query`, {
+	const res = await notionRequest(`/v1/data_sources/${dataSourceId}/query`, {
 		method: 'POST',
 		body: JSON.stringify({
 			filter: {
 				property: 'ID',
-				unique_id: {
-					equals: taskNumber,
-				},
+				unique_id: { equals: taskNumber },
 			},
 			page_size: 1,
 		}),
 	});
 
-	return query.results?.[0] ?? null;
+	return res.results?.[0] ?? null;
 }
 
 async function findPageByTaskNumber(taskNumber) {
-	const dataSources = await getAllAccessibleDataSources();
-
-	console.log(`🔍 Searching TASK-${taskNumber}...`);
+	const sources = await getAllDataSources();
 
 	const matches = [];
 
-	for (const ds of dataSources) {
+	for (const ds of sources) {
 		const page = await findPageInDataSource(ds.id, taskNumber);
-
-		if (page) {
-			console.log(`✅ Found in: ${ds.title?.[0]?.plain_text || 'Unnamed'} (${ds.id})`);
-
-			matches.push({
-				dataSource: ds,
-				page,
-			});
-		}
+		if (page) matches.push({ ds, page });
 	}
 
-	if (matches.length === 0) {
-		return null;
-	}
+	if (matches.length === 0) return null;
 
 	if (matches.length > 1) {
-		const names = matches
-			.map((m) => `${m.dataSource.title?.[0]?.plain_text || 'Unnamed'} (${m.dataSource.id})`)
-			.join(', ');
-
-		throw new Error(
-			`Multiple TASK-${taskNumber} found. Keep one source of truth. Matches: ${names}`,
-		);
+		throw new Error(`Multiple TASK-${taskNumber} found across data sources`);
 	}
 
 	return matches[0].page;
 }
 
-async function getAllChildBlocks(pageId) {
-	const allBlocks = [];
-	let startCursor;
+async function getAllBlocks(pageId) {
+	const all = [];
+	let cursor;
 
 	do {
-		const query = new URLSearchParams();
-		query.set('page_size', '100');
-		if (startCursor) {
-			query.set('start_cursor', startCursor);
-		}
-
-		const res = await notionRequest(`/v1/blocks/${pageId}/children?${query.toString()}`, {
-			method: 'GET',
+		const params = new URLSearchParams({
+			page_size: '100',
+			...(cursor ? { start_cursor: cursor } : {}),
 		});
 
-		allBlocks.push(...(res.results || []));
-		startCursor = res.has_more ? res.next_cursor : undefined;
-	} while (startCursor);
+		const res = await notionRequest(`/v1/blocks/${pageId}/children?${params}`, { method: 'GET' });
 
-	return allBlocks;
+		all.push(...(res.results || []));
+		cursor = res.has_more ? res.next_cursor : undefined;
+	} while (cursor);
+
+	return all;
 }
 
-function blockContainsPrUrl(block, prUrl) {
-	const richText = block?.paragraph?.rich_text || [];
+function blockContainsUrl(block, url) {
+	const texts = block?.paragraph?.rich_text || [];
 
-	return richText.some((item) => {
-		const linkedUrl = item?.text?.link?.url;
-		const plainText = item?.plain_text;
-
-		return linkedUrl === prUrl || plainText === prUrl;
-	});
+	return texts.some((t) => t?.text?.link?.url === url || t?.plain_text === url);
 }
 
-async function assertPrDoesNotExist(pageId, prUrl) {
-	const blocks = await getAllChildBlocks(pageId);
+async function assertPrNotExists(pageId, prUrl) {
+	const blocks = await getAllBlocks(pageId);
 
-	const exists = blocks.some(
-		(block) => block.type === 'paragraph' && blockContainsPrUrl(block, prUrl),
-	);
+	const exists = blocks.some((b) => b.type === 'paragraph' && blockContainsUrl(b, prUrl));
 
 	if (exists) {
 		throw new Error(`PR already exists in Notion: ${prUrl}`);
 	}
 }
 
-async function appendPrLink(pageId, prUrl) {
+async function appendPrToNotion(pageId, prUrl) {
 	await notionRequest(`/v1/blocks/${pageId}/children`, {
 		method: 'PATCH',
 		body: JSON.stringify({
@@ -32026,16 +31984,10 @@ async function appendPrLink(pageId, prUrl) {
 					type: 'paragraph',
 					paragraph: {
 						rich_text: [
+							{ type: 'text', text: { content: '🔗 PR: ' } },
 							{
 								type: 'text',
-								text: { content: '🔗 PR Link: ' },
-							},
-							{
-								type: 'text',
-								text: {
-									content: prUrl,
-									link: { url: prUrl },
-								},
+								text: { content: prUrl, link: { url: prUrl } },
 							},
 						],
 					},
@@ -32045,21 +31997,42 @@ async function appendPrLink(pageId, prUrl) {
 	});
 }
 
+async function updatePrDescriptionIfNeeded(prUrl, notionUrl) {
+	const token = process.env.GITHUB_TOKEN;
+
+	const octokit = github.getOctokit(token);
+
+	const { owner, repo } = github.context.repo;
+	const pr = github.context.payload.pull_request;
+
+	const currentBody = pr.body || '';
+
+	if (currentBody.includes(notionUrl)) {
+		console.log('ℹ️ Notion link already in PR description');
+		return;
+	}
+
+	const newBody = currentBody + `\n\n---\n🔗 Notion: ${notionUrl}\n`;
+
+	await octokit.rest.pulls.update({
+		owner,
+		repo,
+		pull_number: pr.number,
+		body: newBody,
+	});
+
+	console.log('✅ PR description updated');
+}
+
 async function main() {
-	const prUrl =
-		github.context.payload.pull_request?.html_url || github.context.payload.pull_request?.url;
+	const pr = github.context.payload.pull_request;
 
-	const branchName =
-		github.context.payload.pull_request?.head?.ref ||
-		github.context.ref?.replace('refs/heads/', '');
-
-	if (!prUrl) {
-		throw new Error('Cannot determine PR URL (not a pull_request event)');
+	if (!pr) {
+		throw new Error('Not a pull_request event');
 	}
 
-	if (!branchName) {
-		throw new Error('Cannot determine branch name');
-	}
+	const prUrl = pr.html_url;
+	const branchName = pr.head.ref;
 
 	const branchIdPart = extractBranchId(branchName);
 	const taskNumber = extractTaskNumber(branchIdPart);
@@ -32067,17 +32040,21 @@ async function main() {
 	const page = await findPageByTaskNumber(taskNumber);
 
 	if (!page) {
-		throw new Error(`No Notion page found for TASK-${taskNumber}`);
+		throw new Error(`No Notion page for TASK-${taskNumber}`);
 	}
 
-	await assertPrDoesNotExist(page.id, prUrl);
-	await appendPrLink(page.id, prUrl);
+	const notionUrl = page.url;
 
-	console.log(`✅ Updated Notion: TASK-${taskNumber} → ${prUrl}`);
+	await assertPrNotExists(page.id, prUrl);
+	await appendPrToNotion(page.id, prUrl);
+
+	await updatePrDescriptionIfNeeded(prUrl, notionUrl);
+
+	console.log(`✅ Synced TASK-${taskNumber}`);
 }
 
-main().catch((error) => {
-	console.error(error);
+main().catch((e) => {
+	console.error(e);
 	process.exit(1);
 });
 
