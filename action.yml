@@ -12,6 +12,10 @@ inputs:
     required: false
     default: '2026-03-11'
 
+  notion_target_status:
+    description: 'Override target status in Notion (e.g. In progress, Done)'
+    required: false
+
 runs:
   using: 'node20'
   main: 'dist/index.js'

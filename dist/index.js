@@ -31922,7 +31922,6 @@ async function findPageInDataSource(dataSourceId, taskNumber) {
 
 async function findPageByTaskNumber(taskNumber) {
 	const sources = await getAllDataSources();
-
 	const matches = [];
 
 	for (const ds of sources) {
@@ -31949,7 +31948,9 @@ async function getAllBlocks(pageId) {
 			...(cursor ? { start_cursor: cursor } : {}),
 		});
 
-		const res = await notionRequest(`/v1/blocks/${pageId}/children?${params}`, { method: 'GET' });
+		const res = await notionRequest(`/v1/blocks/${pageId}/children?${params}`, {
+			method: 'GET',
+		});
 
 		all.push(...(res.results || []));
 		cursor = res.has_more ? res.next_cursor : undefined;
@@ -31984,7 +31985,7 @@ async function appendPrToNotion(pageId, prUrl) {
 					type: 'paragraph',
 					paragraph: {
 						rich_text: [
-							{ type: 'text', text: { content: '🔗 PR: ' } },
+							{ type: 'text', text: { content: '🔗 PR Link: ' } },
 							{
 								type: 'text',
 								text: { content: prUrl, link: { url: prUrl } },
@@ -31997,8 +31998,51 @@ async function appendPrToNotion(pageId, prUrl) {
 	});
 }
 
+async function updateTaskStatus(page, targetStatusName) {
+	if (!targetStatusName) {
+		console.log('ℹ️ No target status provided, skipping status update');
+		return;
+	}
+
+	const properties = page.properties;
+
+	const statusEntry = Object.entries(properties).find(([_, prop]) => prop.type === 'status');
+
+	if (!statusEntry) {
+		throw new Error('No status property found in Notion page');
+	}
+
+	const [statusKey, statusValue] = statusEntry;
+
+	const currentStatus = statusValue.status?.name;
+
+	console.log(`📊 Current status: ${currentStatus}`);
+
+	if (currentStatus === targetStatusName) {
+		console.log('ℹ️ Status already set, skipping');
+		return;
+	}
+	await notionRequest(`/v1/pages/${page.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({
+			properties: {
+				[statusKey]: {
+					status: {
+						name: targetStatusName,
+					},
+				},
+			},
+		}),
+	});
+	console.log(`✅ Status updated → ${targetStatusName}`);
+}
+
 async function updatePrDescriptionIfNeeded(prUrl, notionUrl) {
 	const token = process.env.GITHUB_TOKEN;
+
+	if (!token) {
+		throw new Error('Missing GITHUB_TOKEN');
+	}
 
 	const octokit = github.getOctokit(token);
 
@@ -32034,6 +32078,8 @@ async function main() {
 	const prUrl = pr.html_url;
 	const branchName = pr.head.ref;
 
+	const targetStatus = core.getInput('notion_target_status');
+
 	const branchIdPart = extractBranchId(branchName);
 	const taskNumber = extractTaskNumber(branchIdPart);
 
@@ -32047,6 +32093,8 @@ async function main() {
 
 	await assertPrNotExists(page.id, prUrl);
 	await appendPrToNotion(page.id, prUrl);
+
+	await updateTaskStatus(page, targetStatus);
 
 	await updatePrDescriptionIfNeeded(prUrl, notionUrl);
 
