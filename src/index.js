@@ -135,7 +135,8 @@ async function assertPrNotExists(pageId, prUrl) {
 	const exists = blocks.some((b) => b.type === 'paragraph' && blockContainsUrl(b, prUrl));
 
 	if (exists) {
-		throw new Error(`PR already exists in Notion: ${prUrl}`);
+		console.log(`PR already exists in Notion: ${prUrl}`);
+		return;
 	}
 }
 
