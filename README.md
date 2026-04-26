@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Notion PR Sync
-        uses: Slipum/sync-notion-pr@v1.3.1
+        uses: Slipum/sync-notion-pr@v1.3.2
         with:
           notion_token: ${{ secrets.NOTION_TOKEN }}
           notion_target_status: 'Review' # optional override (see below)
